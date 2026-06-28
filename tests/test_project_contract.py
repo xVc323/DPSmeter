@@ -79,6 +79,20 @@ class DPSMeterProjectContract(unittest.TestCase):
         self.assertIn('BeforeTargets="ResolveReferences"', csproj)
         self.assertIn('Missing Slay the Spire 2 assemblies', csproj)
 
+    def test_player_display_name_resolution_prefers_network_names_over_character_labels(self):
+        helpers = self.read_text("src/ReflectionHelpers.cs")
+        self.assertIn("TryGetPlatformDisplayName", helpers)
+        self.assertNotIn("typedPlayer.Creature.Name", helpers)
+        self.assertNotIn("typedPlayer.Character.Title", helpers)
+
+        match = re.search(r"PlayerNameMembers\s*=\s*\{(?P<body>.*?)\};", helpers, re.S)
+        self.assertIsNotNone(match, "Player display-name member list should be explicit")
+        body = match.group("body")
+        self.assertIn('"DisplayName"', body)
+        self.assertIn('"PlayerName"', body)
+        self.assertIn('"PersonaName"', body)
+        self.assertNotIn('"CharacterName"', body)
+        self.assertNotIn('"LocalizedName"', body)
 
     def test_source_comments_are_english_only(self):
         for relative_path in ["src/ModEntry.cs", "src/ReflectionHelpers.cs", "src/RunDPSMeterService.cs", "src/DPSMeterOverlay.cs"]:

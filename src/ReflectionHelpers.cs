@@ -33,12 +33,16 @@ internal static class ReflectionHelpers
         "Id"
     };
 
-    private static readonly string[] NameMembers =
+    private static readonly string[] PlayerNameMembers =
     {
         "DisplayName",
-        "CharacterName",
-        "Name",
-        "LocalizedName"
+        "PlayerName",
+        "UserName",
+        "Username",
+        "PersonaName",
+        "Nickname",
+        "NickName",
+        "Name"
     };
 
     private static readonly string[] CharacterLinks =
@@ -193,8 +197,7 @@ internal static class ReflectionHelpers
             {
                 ulong typedPlayerKey = typedPlayer.NetId;
                 string typedDisplayName = TryGetPlatformDisplayName(typedPlayerKey)
-                    ?? typedPlayer.Creature.Name
-                    ?? typedPlayer.Character.Title?.ToString()
+                    ?? TryGetDisplayName(typedPlayer)
                     ?? $"Player {typedPlayerKey}";
                 string typedCharacterName = typedPlayer.Character.Id.Entry;
                 Texture2D? typedPortraitTexture = typedPlayer.Character.IconTexture;
@@ -415,7 +418,7 @@ internal static class ReflectionHelpers
 
     private static string? TryGetDisplayName(object source)
     {
-        foreach (string memberName in NameMembers)
+        foreach (string memberName in PlayerNameMembers)
         {
             object? value = TryGetMemberValue(source, memberName);
             string? text = value?.ToString();
@@ -498,13 +501,13 @@ internal static class ReflectionHelpers
     {
         try
         {
-            PlatformType platformType = PlatformUtil.PrimaryPlatform;
+            PlatformType platformType = TryGetRunPlatform() ?? PlatformUtil.PrimaryPlatform;
             if (platformType == PlatformType.None)
             {
                 return null;
             }
 
-            string? personaName = PlatformUtil.GetPlayerName(platformType, playerKey);
+            string? personaName = PlatformUtil.GetPlayerNameRaw(platformType, playerKey);
 
             if (string.IsNullOrWhiteSpace(personaName)
                 || string.Equals(personaName, "[unknown]", StringComparison.OrdinalIgnoreCase)
@@ -514,6 +517,18 @@ internal static class ReflectionHelpers
             }
 
             return personaName;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private static PlatformType? TryGetRunPlatform()
+    {
+        try
+        {
+            return RunManager.Instance.NetService.Platform;
         }
         catch
         {
