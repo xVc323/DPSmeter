@@ -30,7 +30,22 @@ public sealed partial class DPSMeterOverlay : CanvasLayer
         ["COMBAT"] = "Combat",
         ["LAST"] = "Last",
         ["MAX"] = "Max",
-        ["EMPTY"] = "Waiting for damage events…"
+        ["EMPTY"] = "Waiting for combat events…",
+        ["TAB_METER"] = "Meter",
+        ["TAB_CARDS"] = "Card Usage",
+        ["TAB_RECEIVED"] = "Received Damage",
+        ["CARD_USAGE"] = "Card Usage",
+        ["CARDS"] = "Cards",
+        ["ATTACK"] = "Attack",
+        ["SKILL"] = "Skill",
+        ["POWER"] = "Power",
+        ["OTHER"] = "Other",
+        ["AUTO"] = "Auto",
+        ["RECEIVED_DAMAGE"] = "Received Damage",
+        ["INCOMING"] = "Incoming",
+        ["BLOCKED"] = "Blocked",
+        ["HP_LOST"] = "HP Lost",
+        ["BLOCK_GAINED"] = "Block+"
     };
 
     private static Dictionary<string, string> LoadLocStrings()
@@ -83,14 +98,18 @@ public sealed partial class DPSMeterOverlay : CanvasLayer
     private VBoxContainer? _bodyContent;
     private VBoxContainer? _rows;
     private Label? _emptyLabel;
-    private Control? _columnHeadings;
+    private HBoxContainer? _columnHeadings;
     private Control? _separator;
+    private Button? _meterTabBtn;
+    private Button? _cardsTabBtn;
+    private Button? _receivedTabBtn;
     private Button? _toggleBtn;
     private Button? _hideBtn;
     private Button? _sideTab;
     private bool _isDragging;
     private Vector2 _dragOffset;
     private bool _expanded = true;
+    private OverlayTab _activeTab = OverlayTab.Meter;
     private bool _hiddenToSide;
     private HiddenDockSide _hiddenSide = HiddenDockSide.Right;
     private bool _layoutRefreshQueued;
@@ -158,8 +177,13 @@ public sealed partial class DPSMeterOverlay : CanvasLayer
         // ── Header row: title + toggle ──
         col.AddChild(BuildHeader());
 
+        // ── Metric tabs ──
+        col.AddChild(BuildTabBar());
+
         // ── Column headings ──
-        _columnHeadings = BuildColumnHeadings();
+        _columnHeadings = new HBoxContainer { SizeFlagsHorizontal = Control.SizeFlags.ExpandFill };
+        _columnHeadings.AddThemeConstantOverride("separation", 0);
+        RefreshColumnHeadings();
         col.AddChild(_columnHeadings);
 
         // ── Thin separator ──
@@ -290,22 +314,123 @@ public sealed partial class DPSMeterOverlay : CanvasLayer
         return tab;
     }
 
+    private Control BuildTabBar()
+    {
+        HBoxContainer tabs = new() { SizeFlagsHorizontal = Control.SizeFlags.ExpandFill };
+        tabs.AddThemeConstantOverride("separation", 4);
+
+        _meterTabBtn = BuildTabButton(L("TAB_METER"), OverlayTab.Meter);
+        _cardsTabBtn = BuildTabButton(L("TAB_CARDS"), OverlayTab.CardUsage);
+        _receivedTabBtn = BuildTabButton(L("TAB_RECEIVED"), OverlayTab.ReceivedDamage);
+
+        tabs.AddChild(_meterTabBtn);
+        tabs.AddChild(_cardsTabBtn);
+        tabs.AddChild(_receivedTabBtn);
+        RefreshTabButtons();
+        return tabs;
+    }
+
+    private Button BuildTabButton(string text, OverlayTab tab)
+    {
+        Button button = new()
+        {
+            Text = text,
+            MouseFilter = Control.MouseFilterEnum.Stop,
+            FocusMode = Control.FocusModeEnum.None,
+            SizeFlagsHorizontal = Control.SizeFlags.ExpandFill,
+            CustomMinimumSize = new Vector2(0, 24)
+        };
+        button.AddThemeFontSizeOverride("font_size", 11);
+        button.Pressed += () => SetActiveTab(tab);
+        return button;
+    }
+
+    private void SetActiveTab(OverlayTab tab)
+    {
+        if (_activeTab == tab)
+            return;
+
+        _activeTab = tab;
+        RefreshTabButtons();
+        RefreshColumnHeadings();
+
+        if (_lastState != null)
+            ApplyState(_lastState);
+        else
+            QueueLayoutRefresh();
+    }
+
+    private void RefreshTabButtons()
+    {
+        ApplyTabStyle(_meterTabBtn, _activeTab == OverlayTab.Meter);
+        ApplyTabStyle(_cardsTabBtn, _activeTab == OverlayTab.CardUsage);
+        ApplyTabStyle(_receivedTabBtn, _activeTab == OverlayTab.ReceivedDamage);
+    }
+
+    private static void ApplyTabStyle(Button? button, bool active)
+    {
+        if (button == null)
+            return;
+
+        button.AddThemeColorOverride("font_color", active ? White : Gray);
+        button.AddThemeStyleboxOverride("normal", new StyleBoxFlat
+        {
+            BgColor = active ? new Color("FFFFFF20") : new Color("FFFFFF0C"),
+            BorderColor = active ? BorderActive : Border,
+            BorderWidthBottom = active ? 2 : 1,
+            CornerRadiusTopLeft = 3, CornerRadiusTopRight = 3,
+            CornerRadiusBottomLeft = 3, CornerRadiusBottomRight = 3
+        });
+        button.AddThemeStyleboxOverride("hover", new StyleBoxFlat
+        {
+            BgColor = active ? new Color("FFFFFF28") : new Color("FFFFFF18"),
+            BorderColor = active ? BorderActive : Border,
+            BorderWidthBottom = active ? 2 : 1,
+            CornerRadiusTopLeft = 3, CornerRadiusTopRight = 3,
+            CornerRadiusBottomLeft = 3, CornerRadiusBottomRight = 3
+        });
+    }
+
     // ── Column headings ────────────────────────────────────────
 
-    private static Control BuildColumnHeadings()
+    private void RefreshColumnHeadings()
     {
-        HBoxContainer h = new() { SizeFlagsHorizontal = Control.SizeFlags.ExpandFill };
-        h.AddThemeConstantOverride("separation", 0);
+        if (_columnHeadings == null)
+            return;
 
-        // Icon spacer (40px to match avatar)
-        h.AddChild(Spacer(40));
-        h.AddChild(HeadLabel(L("PLAYER"), true));
-        h.AddChild(HeadLabel(L("PCT"), false, 38));
-        h.AddChild(HeadLabel(L("TOTAL"), false, 62));
-        h.AddChild(HeadLabel(L("COMBAT"), false, 62));
-        h.AddChild(HeadLabel(L("LAST"), false, 52));
-        h.AddChild(HeadLabel(L("MAX"), false, 52));
-        return h;
+        foreach (Node child in _columnHeadings.GetChildren())
+        {
+            _columnHeadings.RemoveChild(child);
+            child.QueueFree();
+        }
+
+        _columnHeadings.AddChild(Spacer(40));
+        _columnHeadings.AddChild(HeadLabel(L("PLAYER"), true));
+
+        switch (_activeTab)
+        {
+            case OverlayTab.Meter:
+                _columnHeadings.AddChild(HeadLabel(L("PCT"), false, 38));
+                _columnHeadings.AddChild(HeadLabel(L("TOTAL"), false, 62));
+                _columnHeadings.AddChild(HeadLabel(L("COMBAT"), false, 62));
+                _columnHeadings.AddChild(HeadLabel(L("LAST"), false, 52));
+                _columnHeadings.AddChild(HeadLabel(L("MAX"), false, 52));
+                break;
+            case OverlayTab.CardUsage:
+                _columnHeadings.AddChild(HeadLabel(L("CARDS"), false, 52));
+                _columnHeadings.AddChild(HeadLabel(L("ATTACK"), false, 52));
+                _columnHeadings.AddChild(HeadLabel(L("SKILL"), false, 52));
+                _columnHeadings.AddChild(HeadLabel(L("POWER"), false, 52));
+                _columnHeadings.AddChild(HeadLabel(L("AUTO"), false, 52));
+                break;
+            case OverlayTab.ReceivedDamage:
+                _columnHeadings.AddChild(HeadLabel(L("INCOMING"), false, 62));
+                _columnHeadings.AddChild(HeadLabel(L("BLOCKED"), false, 62));
+                _columnHeadings.AddChild(HeadLabel(L("HP_LOST"), false, 62));
+                _columnHeadings.AddChild(HeadLabel(L("MAX"), false, 52));
+                _columnHeadings.AddChild(HeadLabel(L("BLOCK_GAINED"), false, 52));
+                break;
+        }
     }
 
     // ── Player row ─────────────────────────────────────────────
@@ -416,6 +541,85 @@ public sealed partial class DPSMeterOverlay : CanvasLayer
                .SetEase(Tween.EaseType.Out);
         };
 
+        return card;
+    }
+
+    private Control CreateCardUsageRow(PlayerDamageSnapshot snap)
+    {
+        return CreateStatsRow(
+            snap,
+            new[]
+            {
+                (RunDPSMeterService.Format(snap.CardsPlayed), Yellow, 52),
+                (RunDPSMeterService.Format(snap.AttackCardsPlayed), Red, 52),
+                (RunDPSMeterService.Format(snap.SkillCardsPlayed), Cyan, 52),
+                (RunDPSMeterService.Format(snap.PowerCardsPlayed), new Color("FF79C6"), 52),
+                (RunDPSMeterService.Format(snap.AutoCardsPlayed), Green, 52)
+            });
+    }
+
+    private Control CreateReceivedDamageRow(PlayerDamageSnapshot snap)
+    {
+        return CreateStatsRow(
+            snap,
+            new[]
+            {
+                (RunDPSMeterService.Format(snap.IncomingDamage), Yellow, 62),
+                (RunDPSMeterService.Format(snap.BlockedDamage), Cyan, 62),
+                (RunDPSMeterService.Format(snap.HpLostDamage), Red, 62),
+                (RunDPSMeterService.Format(snap.MaxDamageReceived), new Color("FF79C6"), 52),
+                (RunDPSMeterService.Format(snap.BlockGained), Green, 52)
+            });
+    }
+
+    private Control CreateStatsRow(PlayerDamageSnapshot snap, IEnumerable<(string Value, Color Color, int Width)> cells)
+    {
+        bool active = snap.IsActive;
+        Color theme = GetCharTheme(snap.CharacterName);
+
+        PanelContainer card = new()
+        {
+            SizeFlagsHorizontal = Control.SizeFlags.ExpandFill,
+            CustomMinimumSize = new Vector2(0, 40)
+        };
+        card.AddThemeStyleboxOverride("panel", new StyleBoxFlat
+        {
+            BgColor = new Color(theme, active ? 0.18f : 0.08f),
+            BorderColor = active ? new Color(theme, 0.9f) : new Color(theme, 0.3f),
+            BorderWidthLeft = 3,
+            BorderWidthTop = 0, BorderWidthRight = 0, BorderWidthBottom = 0,
+            CornerRadiusTopLeft = 4, CornerRadiusTopRight = 4,
+            CornerRadiusBottomLeft = 4, CornerRadiusBottomRight = 4
+        });
+
+        MarginContainer mp = new();
+        mp.SetAnchorsPreset(Control.LayoutPreset.FullRect);
+        mp.AddThemeConstantOverride("margin_left", 6);
+        mp.AddThemeConstantOverride("margin_right", 6);
+        mp.AddThemeConstantOverride("margin_top", 4);
+        mp.AddThemeConstantOverride("margin_bottom", 4);
+
+        HBoxContainer row = new() { SizeFlagsHorizontal = Control.SizeFlags.ExpandFill };
+        row.AddThemeConstantOverride("separation", 0);
+        row.AddChild(BuildAvatar(snap, 32));
+        row.AddChild(Spacer(8));
+
+        VBoxContainer nameCol = new() { SizeFlagsHorizontal = Control.SizeFlags.ExpandFill };
+        nameCol.AddThemeConstantOverride("separation", 0);
+        Label nameLabel = MakeLabel(snap.DisplayName, 13, active ? theme.Lightened(0.3f) : White);
+        nameLabel.ClipText = true;
+        nameLabel.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
+        Label charLabel = MakeLabel(snap.CharacterName, 10, new Color(theme, 0.7f));
+        charLabel.ClipText = true;
+        nameCol.AddChild(nameLabel);
+        nameCol.AddChild(charLabel);
+        row.AddChild(nameCol);
+
+        foreach ((string value, Color color, int width) in cells)
+            row.AddChild(StatCell(value, color, width));
+
+        mp.AddChild(row);
+        card.AddChild(mp);
         return card;
     }
 
@@ -554,6 +758,49 @@ public sealed partial class DPSMeterOverlay : CanvasLayer
         return card;
     }
 
+    private Control CreateCompactStatsRow(PlayerDamageSnapshot snap, string value, Color valueColor)
+    {
+        Color theme = GetCharTheme(snap.CharacterName);
+        bool active = snap.IsActive;
+
+        PanelContainer card = new()
+        {
+            SizeFlagsHorizontal = Control.SizeFlags.ExpandFill,
+            CustomMinimumSize = new Vector2(0, 28)
+        };
+        card.AddThemeStyleboxOverride("panel", new StyleBoxFlat
+        {
+            BgColor = new Color(theme, active ? 0.18f : 0.08f),
+            BorderColor = active ? new Color(theme, 0.9f) : new Color(theme, 0.3f),
+            BorderWidthLeft = 3,
+            BorderWidthTop = 0, BorderWidthRight = 0, BorderWidthBottom = 0,
+            CornerRadiusTopLeft = 4, CornerRadiusTopRight = 4,
+            CornerRadiusBottomLeft = 4, CornerRadiusBottomRight = 4
+        });
+
+        MarginContainer mp = new();
+        mp.SetAnchorsPreset(Control.LayoutPreset.FullRect);
+        mp.AddThemeConstantOverride("margin_left", 6);
+        mp.AddThemeConstantOverride("margin_right", 6);
+        mp.AddThemeConstantOverride("margin_top", 2);
+        mp.AddThemeConstantOverride("margin_bottom", 2);
+
+        HBoxContainer row = new() { SizeFlagsHorizontal = Control.SizeFlags.ExpandFill };
+        row.AddThemeConstantOverride("separation", 0);
+        row.AddChild(BuildAvatar(snap, 24));
+        row.AddChild(Spacer(6));
+
+        Label nameLabel = MakeLabel(snap.DisplayName, 12, active ? theme.Lightened(0.3f) : White);
+        nameLabel.ClipText = true;
+        nameLabel.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
+        row.AddChild(nameLabel);
+        row.AddChild(StatCell(value, valueColor, 62));
+
+        mp.AddChild(row);
+        card.AddChild(mp);
+        return card;
+    }
+
     // ── State update ───────────────────────────────────────────
 
     private void OnChanged(OverlayState s)
@@ -574,6 +821,9 @@ public sealed partial class DPSMeterOverlay : CanvasLayer
 
         _lastState = s;
 
+        RefreshTabButtons();
+        RefreshColumnHeadings();
+
         // Hide column headings and separator in compact mode
         if (_columnHeadings != null) _columnHeadings.Visible = _expanded;
         if (_separator != null) _separator.Visible = _expanded;
@@ -593,11 +843,31 @@ public sealed partial class DPSMeterOverlay : CanvasLayer
         for (int i = 0; i < s.Players.Count; i++)
         {
             float ratio = teamTotal > 0 ? (float)(s.Players[i].TotalDamage / teamTotal) : 0f;
-            _rows.AddChild(_expanded ? CreateRow(s.Players[i], ratio) : CreateCompactRow(s.Players[i], ratio));
+            _rows.AddChild(CreatePlayerRowForActiveTab(s.Players[i], ratio));
         }
 
         RefreshChrome();
         QueueLayoutRefresh();
+    }
+
+    private Control CreatePlayerRowForActiveTab(PlayerDamageSnapshot snap, float damageRatio)
+    {
+        if (!_expanded)
+        {
+            return _activeTab switch
+            {
+                OverlayTab.CardUsage => CreateCompactStatsRow(snap, RunDPSMeterService.Format(snap.CardsPlayed), Yellow),
+                OverlayTab.ReceivedDamage => CreateCompactStatsRow(snap, RunDPSMeterService.Format(snap.HpLostDamage), Red),
+                _ => CreateCompactRow(snap, damageRatio)
+            };
+        }
+
+        return _activeTab switch
+        {
+            OverlayTab.CardUsage => CreateCardUsageRow(snap),
+            OverlayTab.ReceivedDamage => CreateReceivedDamageRow(snap),
+            _ => CreateRow(snap, damageRatio)
+        };
     }
 
     // ── Drag ───────────────────────────────────────────────────
@@ -876,5 +1146,12 @@ public sealed partial class DPSMeterOverlay : CanvasLayer
     {
         Left,
         Right
+    }
+
+    private enum OverlayTab
+    {
+        Meter,
+        CardUsage,
+        ReceivedDamage
     }
 }

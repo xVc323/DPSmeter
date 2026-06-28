@@ -24,22 +24,6 @@ find_sts2_dir() {
   dirname "$(dirname "$(dirname "$found")")"
 }
 
-unlink_save_links() {
-  local user_root="$HOME/Library/Application Support/SlayTheSpire2/steam"
-  [[ "${DPSMETER_UNLINK_SAVES:-0}" == "1" ]] || { log "Leaving save links intact. Set DPSMETER_UNLINK_SAVES=1 to convert them back to copies."; return; }
-  [[ -d "$user_root" ]] || return
-  local link target parent temp
-  find "$user_root" -path '*/modded/profile*/saves' -type l | while read -r link; do
-    target="$(readlink "$link")"
-    parent="$(dirname "$link")"
-    temp="${link}.copy-before-unlink-$(date +%Y%m%d-%H%M%S)"
-    run cp -a "$target" "$temp"
-    run rm "$link"
-    run mv "$temp" "$link"
-    log "Converted save symlink to copy: $parent/saves"
-  done
-}
-
 main() {
   if pgrep -f "Slay the Spire 2" >/dev/null 2>&1; then
     fail "Slay the Spire 2 appears to be running. Quit the game before uninstalling."
@@ -53,7 +37,6 @@ main() {
   else
     log "$MOD_ID is not installed at $mod_dir"
   fi
-  unlink_save_links
   log "Uninstall complete. Saves were not deleted."
 }
 

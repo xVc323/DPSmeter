@@ -26,15 +26,16 @@ class DistributionContract(unittest.TestCase):
             result = subprocess.run(["bash", "-n", str(ROOT / path)], text=True, capture_output=True)
             self.assertEqual(result.returncode, 0, result.stderr)
 
-    def test_macos_installer_targets_executable_adjacent_mods_and_shares_saves(self):
+    def test_macos_installer_targets_executable_adjacent_mods_and_does_not_touch_saves(self):
         script = self.read("scripts/install-macos.sh")
         self.assertIn("SlayTheSpire2.app/Contents/MacOS/mods", script)
         self.assertIn("DPSMETER_PACKAGE", script)
         self.assertIn("releases/latest/download/DPSMeter.zip", script)
         self.assertIn("backup_path", script)
-        self.assertRegex(script, r"ln\s+-s")
-        self.assertIn("modded/profile", script)
-        self.assertIn("profile", script)
+        self.assertNotRegex(script, r"ln\s+-s")
+        self.assertNotIn("modded/profile", script)
+        self.assertNotIn("profile1/saves", script)
+        self.assertNotIn("DPSMETER_UNLINK_SAVES", script)
         self.assertIn("affects_gameplay", script)
         self.assertIn("DPSMETER_DRY_RUN", script)
         self.assertIn("DPSMETER_TEMP_DIR", script)
@@ -44,17 +45,22 @@ class DistributionContract(unittest.TestCase):
         self.assertIn("SlayTheSpire2.app/Contents/MacOS/mods", script)
         self.assertIn("rm -rf", script)
         self.assertIn("DPSMeter", script)
-        self.assertIn("DPSMETER_UNLINK_SAVES", script)
+        self.assertNotIn("DPSMETER_UNLINK_SAVES", script)
+        self.assertNotIn("profile1/saves", script)
+        self.assertNotIn("modded/profile", script)
         self.assertNotIn("rm -rf \"$account/profile", script)
 
-    def test_windows_installer_targets_executable_adjacent_mods_and_shares_saves(self):
+    def test_windows_installer_targets_executable_adjacent_mods_and_does_not_touch_saves(self):
         script = self.read("scripts/install-windows.ps1")
         self.assertIn("Find-Sts2Executable", script)
         self.assertIn("Split-Path", script)
         self.assertIn("mods", script)
         self.assertIn("DPSMeter.zip", script)
         self.assertIn("Backup-Path", script)
-        self.assertRegex(script, r"ItemType\s+Junction")
+        self.assertNotRegex(script, r"ItemType\s+Junction")
+        self.assertNotIn("Share-Saves", script)
+        self.assertNotIn("Convert-SaveLinks", script)
+        self.assertNotIn("modded", script)
         self.assertIn("affects_gameplay", script)
         self.assertIn("DPSMETER_PACKAGE", script)
 
@@ -62,7 +68,9 @@ class DistributionContract(unittest.TestCase):
         script = self.read("scripts/uninstall-windows.ps1")
         self.assertIn("Find-Sts2Executable", script)
         self.assertIn("Remove-Item", script)
-        self.assertIn("DPSMETER_UNLINK_SAVES", script)
+        self.assertNotIn("DPSMETER_UNLINK_SAVES", script)
+        self.assertNotIn("Convert-SaveLinks", script)
+        self.assertNotIn("Share-Saves", script)
         self.assertNotIn("profile1\\saves' -Recurse", script)
 
     def test_readme_documents_public_install_and_uninstall(self):
@@ -73,7 +81,8 @@ class DistributionContract(unittest.TestCase):
         self.assertIn("irm", readme)
         self.assertIn("install-windows.ps1", readme)
         self.assertIn("uninstall-windows.ps1", readme)
-        self.assertIn("modded/profile", readme)
+        self.assertIn("do not touch, copy, delete, symlink, or junction any saves", readme)
+        self.assertIn("Steam Cloud", readme)
         self.assertIn("DPSMeter.zip", readme)
 
     def test_package_script_creates_expected_zip_when_run(self):

@@ -94,6 +94,49 @@ class DPSMeterProjectContract(unittest.TestCase):
         self.assertNotIn('"CharacterName"', body)
         self.assertNotIn('"LocalizedName"', body)
 
+
+    def test_v02_hooks_collect_card_usage_and_received_damage(self):
+        mod_entry = self.read_text("src/ModEntry.cs")
+        service = self.read_text("src/RunDPSMeterService.cs")
+        overlay = self.read_text("src/DPSMeterOverlay.cs")
+        loc = self.read_json("assets/localization/eng/dps_meter.json")
+
+        for hook_name in ["AfterCardPlayed", "AfterDamageReceived", "AfterBlockGained"]:
+            self.assertIn(f"nameof(Hook.{hook_name})", mod_entry)
+
+        self.assertIn("RecordCardPlayed", service)
+        self.assertIn("RecordDamageReceived", service)
+        self.assertIn("RecordBlockGained", service)
+        for field in ["CardsPlayed", "AttackCardsPlayed", "SkillCardsPlayed", "PowerCardsPlayed", "AutoCardsPlayed"]:
+            self.assertIn(field, service)
+        for field in ["IncomingDamage", "BlockedDamage", "HpLostDamage", "BlockGained"]:
+            self.assertIn(field, service)
+
+        self.assertEqual(loc["TAB_METER"], "Meter")
+        self.assertEqual(loc["TAB_CARDS"], "Card Usage")
+        self.assertEqual(loc["TAB_RECEIVED"], "Received Damage")
+        for label in ["CARD_USAGE", "RECEIVED_DAMAGE", "HP_LOST", "BLOCKED", "INCOMING", "AUTO", "BLOCK_GAINED"]:
+            self.assertIn(label, loc)
+            self.assertIn(label, overlay)
+
+    def test_v02_version_is_declared(self):
+        descriptor = self.read_json("DPSMeter.json")
+        manifest = self.read_json("mod_manifest.json")
+        self.assertEqual(descriptor["version"], "0.2.0")
+        self.assertEqual(manifest["version"], "0.2.0")
+
+
+    def test_max_damage_uses_card_play_aggregation_for_multi_hit_and_aoe(self):
+        mod_entry = self.read_text("src/ModEntry.cs")
+        service = self.read_text("src/RunDPSMeterService.cs")
+
+        self.assertIn("nameof(Hook.BeforeCardPlayed)", mod_entry)
+        self.assertIn("BeginCardDamageAggregation", service)
+        self.assertIn("CompleteCardDamageAggregation", service)
+        self.assertIn("CardDamageAggregationContext", service)
+        self.assertIn("TryAddToActiveCardDamageAggregation", service)
+        self.assertRegex(service, r"CompleteCardDamageAggregation[\s\S]*?MaxHitDamage")
+
     def test_source_comments_are_english_only(self):
         for relative_path in ["src/ModEntry.cs", "src/ReflectionHelpers.cs", "src/RunDPSMeterService.cs", "src/DPSMeterOverlay.cs"]:
             self.assertIsNone(re.search(r"[\u4e00-\u9fff]", self.read_text(relative_path)), relative_path)

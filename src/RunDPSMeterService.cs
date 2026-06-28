@@ -3,7 +3,9 @@ using System.Text.Json;
 using System.Threading;
 using Godot;
 using MegaCrit.Sts2.Core.Combat;
+using MegaCrit.Sts2.Core.Entities.Cards;
 using MegaCrit.Sts2.Core.Entities.Creatures;
+using MegaCrit.Sts2.Core.Models;
 using MegaCrit.Sts2.Core.Models.Powers;
 
 namespace DPSMeter;
@@ -21,6 +23,7 @@ public static class RunDPSMeterService
     private static ulong? _activePlayerKey;
     private static int _damageCounter;
     private static readonly AsyncLocal<PoisonTrackingContext?> CurrentPoisonContext = new();
+    private static readonly AsyncLocal<CardDamageAggregationContext?> CurrentCardDamageAggregation = new();
     private static readonly Dictionary<Creature, PendingDoomDamage> PendingDoomDamageByCreature = new();
 
     public static event Action<OverlayState>? Changed;
@@ -95,8 +98,176 @@ public static class RunDPSMeterService
             foreach (PlayerDamageSnapshot snapshot in Totals.Values)
             {
                 snapshot.CombatDamage = 0m;
+                snapshot.CardsPlayed = 0;
+                snapshot.AttackCardsPlayed = 0;
+                snapshot.SkillCardsPlayed = 0;
+                snapshot.PowerCardsPlayed = 0;
+                snapshot.OtherCardsPlayed = 0;
+                snapshot.AutoCardsPlayed = 0;
+                snapshot.IncomingDamage = 0m;
+                snapshot.BlockedDamage = 0m;
+                snapshot.HpLostDamage = 0m;
+                snapshot.LastDamageReceived = 0m;
+                snapshot.MaxDamageReceived = 0m;
+                snapshot.BlockGained = 0m;
                 snapshot.IsActive = false;
             }
+        }
+
+        Publish();
+    }
+
+    public static void RecordCardPlayed(CardPlay? cardPlay)
+    {
+        CardModel? card = cardPlay?.Card;
+        if (card == null)
+        {
+            return;
+        }
+
+        if (!ReflectionHelpers.TryResolvePlayerHandle(card, out PlayerHandle handle))
+        {
+            return;
+        }
+
+        lock (SyncRoot)
+        {
+            PlayerDamageSnapshot snapshot = GetOrCreate(handle);
+            ApplyHandle(snapshot, handle);
+            snapshot.CardsPlayed++;
+            if (cardPlay!.IsAutoPlay)
+            {
+                snapshot.AutoCardsPlayed++;
+            }
+
+            switch (card.Type)
+            {
+                case CardType.Attack:
+                    snapshot.AttackCardsPlayed++;
+                    break;
+                case CardType.Skill:
+                    snapshot.SkillCardsPlayed++;
+                    break;
+                case CardType.Power:
+                    snapshot.PowerCardsPlayed++;
+                    break;
+                default:
+                    snapshot.OtherCardsPlayed++;
+                    break;
+            }
+
+            snapshot.LastUpdatedUtc = DateTime.UtcNow;
+        }
+
+        Publish();
+    }
+
+    public static void BeginCardDamageAggregation(CardPlay? cardPlay)
+    {
+        CardModel? card = cardPlay?.Card;
+        if (card == null)
+        {
+            return;
+        }
+
+        if (!ReflectionHelpers.TryResolvePlayerHandle(card, out PlayerHandle handle))
+        {
+            return;
+        }
+
+        CurrentCardDamageAggregation.Value = new CardDamageAggregationContext(cardPlay!, handle, CurrentCardDamageAggregation.Value);
+    }
+
+    public static void CompleteCardDamageAggregation(CardPlay? cardPlay)
+    {
+        CardDamageAggregationContext? context = CurrentCardDamageAggregation.Value;
+        if (context == null)
+        {
+            return;
+        }
+
+        if (cardPlay != null && !ReferenceEquals(context.CardPlay, cardPlay))
+        {
+            return;
+        }
+
+        decimal aggregateDamage = context.Damage;
+        PlayerHandle handle = context.Handle;
+        CurrentCardDamageAggregation.Value = context.Previous;
+
+        if (aggregateDamage <= 0m)
+        {
+            return;
+        }
+
+        lock (SyncRoot)
+        {
+            PlayerDamageSnapshot snapshot = GetOrCreate(handle);
+            ApplyHandle(snapshot, handle);
+            snapshot.LastDamage = aggregateDamage;
+            if (aggregateDamage > snapshot.MaxHitDamage)
+                snapshot.MaxHitDamage = aggregateDamage;
+            snapshot.LastUpdatedUtc = DateTime.UtcNow;
+        }
+
+        Publish();
+    }
+
+    public static void RecordDamageReceived(Creature? target, DamageResult? result)
+    {
+        if (target == null || result == null || !ReflectionHelpers.IsPlayerCreature(target))
+        {
+            return;
+        }
+
+        if (!ReflectionHelpers.TryResolvePlayerHandle(target, out PlayerHandle handle))
+        {
+            return;
+        }
+
+        decimal incoming = result.TotalDamage;
+        decimal blocked = result.BlockedDamage;
+        decimal hpLost = result.UnblockedDamage;
+
+        if (incoming <= 0m && blocked <= 0m && hpLost <= 0m)
+        {
+            return;
+        }
+
+        lock (SyncRoot)
+        {
+            PlayerDamageSnapshot snapshot = GetOrCreate(handle);
+            ApplyHandle(snapshot, handle);
+            snapshot.IncomingDamage += incoming;
+            snapshot.BlockedDamage += blocked;
+            snapshot.HpLostDamage += hpLost;
+            snapshot.LastDamageReceived = hpLost;
+            if (hpLost > snapshot.MaxDamageReceived)
+                snapshot.MaxDamageReceived = hpLost;
+            snapshot.LastUpdatedUtc = DateTime.UtcNow;
+        }
+
+        Publish();
+    }
+
+    public static void RecordBlockGained(Creature? creature, decimal amount)
+    {
+        if (creature == null || amount <= 0m || !ReflectionHelpers.IsPlayerCreature(creature))
+        {
+            return;
+        }
+
+        if (!ReflectionHelpers.TryResolvePlayerHandle(creature, out PlayerHandle handle))
+        {
+            return;
+        }
+
+        lock (SyncRoot)
+        {
+            PlayerDamageSnapshot snapshot = GetOrCreate(handle);
+            ApplyHandle(snapshot, handle);
+            snapshot.BlockGained += amount;
+            snapshot.LastUpdatedUtc = DateTime.UtcNow;
         }
 
         Publish();
@@ -179,7 +350,8 @@ public static class RunDPSMeterService
             snapshot.TotalDamage += damage;
             snapshot.CombatDamage += damage;
             snapshot.LastDamage = damage;
-            if (damage > snapshot.MaxHitDamage)
+            bool groupedIntoCardPlay = TryAddToActiveCardDamageAggregation(handle.PlayerKey, damage);
+            if (!groupedIntoCardPlay && damage > snapshot.MaxHitDamage)
                 snapshot.MaxHitDamage = damage;
             snapshot.LastUpdatedUtc = DateTime.UtcNow;
             _damageCounter++;
@@ -336,6 +508,18 @@ public static class RunDPSMeterService
             SaveState();
 
         Publish();
+    }
+
+    private static bool TryAddToActiveCardDamageAggregation(ulong playerKey, decimal damage)
+    {
+        CardDamageAggregationContext? context = CurrentCardDamageAggregation.Value;
+        if (context == null || context.Handle.PlayerKey != playerKey || damage <= 0m)
+        {
+            return false;
+        }
+
+        context.Damage += damage;
+        return true;
     }
 
     private static async Task AwaitAndRestorePoisonContextAsync(Task originalTask, PoisonTrackingContext context)
@@ -573,6 +757,30 @@ public sealed class PlayerDamageSnapshot
 
     public decimal MaxHitDamage { get; set; }
 
+    public int CardsPlayed { get; set; }
+
+    public int AttackCardsPlayed { get; set; }
+
+    public int SkillCardsPlayed { get; set; }
+
+    public int PowerCardsPlayed { get; set; }
+
+    public int OtherCardsPlayed { get; set; }
+
+    public int AutoCardsPlayed { get; set; }
+
+    public decimal IncomingDamage { get; set; }
+
+    public decimal BlockedDamage { get; set; }
+
+    public decimal HpLostDamage { get; set; }
+
+    public decimal LastDamageReceived { get; set; }
+
+    public decimal MaxDamageReceived { get; set; }
+
+    public decimal BlockGained { get; set; }
+
     public DateTime LastUpdatedUtc { get; set; }
 
     public PlayerDamageSnapshot Clone()
@@ -588,12 +796,42 @@ public sealed class PlayerDamageSnapshot
             CombatDamage = CombatDamage,
             LastDamage = LastDamage,
             MaxHitDamage = MaxHitDamage,
+            CardsPlayed = CardsPlayed,
+            AttackCardsPlayed = AttackCardsPlayed,
+            SkillCardsPlayed = SkillCardsPlayed,
+            PowerCardsPlayed = PowerCardsPlayed,
+            OtherCardsPlayed = OtherCardsPlayed,
+            AutoCardsPlayed = AutoCardsPlayed,
+            IncomingDamage = IncomingDamage,
+            BlockedDamage = BlockedDamage,
+            HpLostDamage = HpLostDamage,
+            LastDamageReceived = LastDamageReceived,
+            MaxDamageReceived = MaxDamageReceived,
+            BlockGained = BlockGained,
             LastUpdatedUtc = LastUpdatedUtc
         };
     }
 }
 
 public readonly record struct PlayerHandle(ulong PlayerKey, string DisplayName, string? CharacterName, Texture2D? PortraitTexture);
+
+internal sealed class CardDamageAggregationContext
+{
+    public CardDamageAggregationContext(CardPlay cardPlay, PlayerHandle handle, CardDamageAggregationContext? previous)
+    {
+        CardPlay = cardPlay;
+        Handle = handle;
+        Previous = previous;
+    }
+
+    public CardPlay CardPlay { get; }
+
+    public PlayerHandle Handle { get; }
+
+    public CardDamageAggregationContext? Previous { get; }
+
+    public decimal Damage { get; set; }
+}
 
 internal sealed class PoisonTrackingContext
 {

@@ -19,7 +19,6 @@ STS2 only blocks multiplayer joins when **gameplay-affecting** mods differ. DPS 
 - DLL-only install; no separate `.pck` is required
 - Compact and side-hidden UI states
 - English UI text only
-- Automatic save sharing between normal and modded profiles
 
 ## Quick install from GitHub
 
@@ -53,34 +52,11 @@ irm https://raw.githubusercontent.com/xvc323/DPSmeter/main/scripts/uninstall-win
 
 ## Save handling
 
-STS2 stores saves separately once any mod is loaded:
+The install and uninstall scripts **do not touch, copy, delete, symlink, or junction any saves**. They only install or remove the `mods/DPSMeter` folder.
 
-```text
-profile1/saves
-modded/profile1/saves
-```
+STS2 stores modded and unmodded saves separately once any mod is loaded. Do **not** automate save sharing with symlinks or Windows junctions: Steam Cloud may treat the linked folder as real save data and overwrite progression in the other profile.
 
-The installer backs up any existing modded save folder and then links the modded save folder to the normal save folder:
-
-```text
-modded/profile1/saves -> profile1/saves
-```
-
-This keeps progression continuous when switching between unmodded STS2 and DPS Meter. Uninstall does **not** delete saves and leaves the save link intact by default.
-
-If you really want uninstall to convert the save link back into a separate copy:
-
-macOS:
-
-```bash
-DPSMETER_UNLINK_SAVES=1 bash scripts/uninstall-macos.sh
-```
-
-Windows:
-
-```powershell
-$env:DPSMETER_UNLINK_SAVES = "1"; .\scripts\uninstall-windows.ps1
-```
+If you ever need to migrate progression between profiles, quit the game, disable Steam Cloud temporarily, make a manual backup first, and copy the relevant save files yourself.
 
 ## Build a release package
 

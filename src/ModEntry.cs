@@ -2,6 +2,7 @@ using System.Reflection;
 using Godot;
 using HarmonyLib;
 using MegaCrit.Sts2.Core.Combat;
+using MegaCrit.Sts2.Core.Entities.Cards;
 using MegaCrit.Sts2.Core.Models;
 using MegaCrit.Sts2.Core.Models.Powers;
 using MegaCrit.Sts2.Core.Entities.Creatures;
@@ -31,7 +32,11 @@ public static class ModEntry
         PatchHook(nameof(Hook.BeforeCombatStart), nameof(HookPatches.BeforeCombatStartPostfix));
         PatchHook(nameof(Hook.AfterCombatEnd), nameof(HookPatches.AfterCombatEndPostfix));
         PatchHook(nameof(Hook.AfterPlayerTurnStart), nameof(HookPatches.AfterPlayerTurnStartPostfix));
+        PatchHook(nameof(Hook.BeforeCardPlayed), nameof(HookPatches.BeforeCardPlayedPostfix));
+        PatchHook(nameof(Hook.AfterCardPlayed), nameof(HookPatches.AfterCardPlayedPostfix));
         PatchHook(nameof(Hook.AfterDamageGiven), nameof(HookPatches.AfterDamageGivenPostfix));
+        PatchHook(nameof(Hook.AfterDamageReceived), nameof(HookPatches.AfterDamageReceivedPostfix));
+        PatchHook(nameof(Hook.AfterBlockGained), nameof(HookPatches.AfterBlockGainedPostfix));
         PatchHook(nameof(Hook.AfterDiedToDoom), nameof(HookPatches.AfterDiedToDoomPostfix));
         PatchMethod(typeof(PoisonPower), nameof(PoisonPower.AfterSideTurnStart), nameof(StatusPowerPatches.PoisonAfterSideTurnStartPrefix), nameof(StatusPowerPatches.PoisonAfterSideTurnStartPostfix));
         PatchMethod(typeof(DoomPower), nameof(DoomPower.DoomKill), nameof(StatusPowerPatches.DoomKillPrefix));
@@ -112,6 +117,23 @@ internal static class HookPatches
     }
 
     // Hook signature:
+    // BeforeCardPlayed(ICombatState combatState, CardPlay cardPlay)
+    public static void BeforeCardPlayedPostfix(ICombatState? combatState, CardPlay? cardPlay)
+    {
+        RunDPSMeterService.EnsurePlayersRegistered(combatState);
+        RunDPSMeterService.BeginCardDamageAggregation(cardPlay);
+    }
+
+    // Hook signature:
+    // AfterCardPlayed(ICombatState combatState, PlayerChoiceContext choiceContext, CardPlay cardPlay)
+    public static void AfterCardPlayedPostfix(ICombatState? combatState, PlayerChoiceContext? choiceContext, CardPlay? cardPlay)
+    {
+        RunDPSMeterService.EnsurePlayersRegistered(combatState);
+        RunDPSMeterService.CompleteCardDamageAggregation(cardPlay);
+        RunDPSMeterService.RecordCardPlayed(cardPlay);
+    }
+
+    // Hook signature:
     // AfterDamageGiven(PlayerChoiceContext choiceContext, CombatState combatState, 
     //                   Creature? dealer, DamageResult results, ValueProp props, 
     //                   Creature target, CardModel? cardSource)
@@ -134,6 +156,36 @@ internal static class HookPatches
             return;
 
         RunDPSMeterService.RecordDamage(dealer, results, target, cardSource);
+    }
+
+    // Hook signature:
+    // AfterDamageReceived(PlayerChoiceContext choiceContext, IRunState runState, ICombatState? combatState,
+    //                     Creature target, DamageResult result, ValueProp props, Creature? dealer, CardModel? cardSource)
+    public static void AfterDamageReceivedPostfix(
+        PlayerChoiceContext? choiceContext,
+        IRunState? runState,
+        ICombatState? combatState,
+        Creature? target,
+        DamageResult? result,
+        ValueProp props,
+        Creature? dealer,
+        CardModel? cardSource)
+    {
+        RunDPSMeterService.EnsurePlayersRegistered(runState, combatState);
+        RunDPSMeterService.RecordDamageReceived(target, result);
+    }
+
+    // Hook signature:
+    // AfterBlockGained(ICombatState combatState, Creature creature, decimal amount, ValueProp props, CardModel? cardSource)
+    public static void AfterBlockGainedPostfix(
+        ICombatState? combatState,
+        Creature? creature,
+        decimal amount,
+        ValueProp props,
+        CardModel? cardSource)
+    {
+        RunDPSMeterService.EnsurePlayersRegistered(combatState);
+        RunDPSMeterService.RecordBlockGained(creature, amount);
     }
 
     // Hook signature:

@@ -14,24 +14,6 @@ function Find-Sts2Executable {
     }
     throw 'Could not find Slay the Spire 2 executable. Set STS2_EXE.'
 }
-function Convert-SaveLinks {
-    if ($env:DPSMETER_UNLINK_SAVES -ne '1') {
-        Write-Step 'Leaving save links intact. Set DPSMETER_UNLINK_SAVES=1 to convert links back to copies.'
-        return
-    }
-    foreach ($base in @((Join-Path $env:APPDATA 'SlayTheSpire2'), (Join-Path $env:APPDATA 'Godot\app_userdata\SlayTheSpire2'), (Join-Path $env:LOCALAPPDATA 'SlayTheSpire2'))) {
-        $steam = Join-Path $base 'steam'
-        if (-not (Test-Path -LiteralPath $steam)) { continue }
-        Get-ChildItem -LiteralPath $steam -Directory -Recurse -Filter saves | Where-Object { $_.FullName -match '\\modded\\profile[^\\]+\\saves$' } | ForEach-Object {
-            if ($_.LinkType -eq 'Junction' -or $_.Attributes.ToString().Contains('ReparsePoint')) {
-                $copy = "$($_.FullName).copy-before-unlink-$(Get-Date -Format 'yyyyMMdd-HHmmss')"
-                Invoke-Step { Copy-Item -LiteralPath $_.FullName -Destination $copy -Recurse -Force } "Copy linked saves to $copy"
-                Invoke-Step { Remove-Item -LiteralPath $_.FullName -Recurse -Force } "Remove link $($_.FullName)"
-                Invoke-Step { Move-Item -LiteralPath $copy -Destination $_.FullName } "Restore save copy"
-            }
-        }
-    }
-}
 if (Get-Process | Where-Object { $_.ProcessName -like '*Slay*Spire*' }) { throw 'Quit Slay the Spire 2 before uninstalling.' }
 $Exe = Find-Sts2Executable
 $ModDir = Join-Path (Join-Path (Split-Path -Parent $Exe) 'mods') $ModId
@@ -41,5 +23,4 @@ if (Test-Path -LiteralPath $ModDir) {
 } else {
     Write-Step "$ModId is not installed at $ModDir"
 }
-Convert-SaveLinks
 Write-Step 'Uninstall complete. Saves were not deleted.'

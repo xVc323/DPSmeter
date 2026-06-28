@@ -69,42 +69,6 @@ function Get-Package([string]$TempDir) {
     }
     return $Payload
 }
-function Get-Sts2UserRoots {
-    $candidates = @(
-        (Join-Path $env:APPDATA 'SlayTheSpire2'),
-        (Join-Path $env:APPDATA 'Godot\app_userdata\SlayTheSpire2'),
-        (Join-Path $env:LOCALAPPDATA 'SlayTheSpire2')
-    )
-    return $candidates | Where-Object { $_ -and (Test-Path -LiteralPath $_) }
-}
-function Share-Saves {
-    foreach ($root in Get-Sts2UserRoots) {
-        $steamRoot = Join-Path $root 'steam'
-        if (-not (Test-Path -LiteralPath $steamRoot)) { continue }
-        Get-ChildItem -LiteralPath $steamRoot -Directory | ForEach-Object {
-            $account = $_.FullName
-            Get-ChildItem -LiteralPath $account -Directory -Filter 'profile*' | ForEach-Object {
-                $normalSaves = Join-Path $_.FullName 'saves'
-                if (-not (Test-Path -LiteralPath $normalSaves)) { return }
-                $moddedProfile = Join-Path (Join-Path $account 'modded') $_.Name
-                $moddedSaves = Join-Path $moddedProfile 'saves'
-                Invoke-Step { New-Item -ItemType Directory -Path $moddedProfile -Force | Out-Null } "Create $moddedProfile"
-                if (Test-Path -LiteralPath $moddedSaves) {
-                    Backup-Path $moddedSaves
-                    Invoke-Step { Remove-Item -LiteralPath $moddedSaves -Recurse -Force } "Remove existing $moddedSaves"
-                }
-                try {
-                    Invoke-Step { New-Item -ItemType Junction -Path $moddedSaves -Target $normalSaves | Out-Null } "Create Junction $moddedSaves -> $normalSaves"
-                    Write-Step "Linked modded saves to normal saves for $($_.Name)"
-                } catch {
-                    Write-Step "Junction failed; copying saves instead: $($_.Exception.Message)"
-                    Invoke-Step { Copy-Item -LiteralPath $normalSaves -Destination $moddedSaves -Recurse -Force } "Copy $normalSaves to $moddedSaves"
-                }
-            }
-        }
-    }
-}
-
 if (Get-Process | Where-Object { $_.ProcessName -like '*Slay*Spire*' }) { throw 'Quit Slay the Spire 2 before installing.' }
 $Exe = Find-Sts2Executable
 $ModsRoot = Join-Path (Split-Path -Parent $Exe) 'mods'
@@ -117,7 +81,6 @@ try {
     Invoke-Step { New-Item -ItemType Directory -Path $ModDir -Force | Out-Null } "Create $ModDir"
     Invoke-Step { Copy-Item -LiteralPath (Join-Path $Payload 'DPSMeter.dll') -Destination (Join-Path $ModDir 'DPSMeter.dll') -Force } "Install DLL"
     Invoke-Step { Copy-Item -LiteralPath (Join-Path $Payload 'DPSMeter.json') -Destination (Join-Path $ModDir 'DPSMeter.json') -Force } "Install manifest"
-    Share-Saves
     Write-Step "Install complete: $ModDir"
 } finally {
     if (Test-Path -LiteralPath $Temp) { Remove-Item -LiteralPath $Temp -Recurse -Force -ErrorAction SilentlyContinue }

@@ -6,5 +6,20 @@
   "COMBAT": "Combat",
   "LAST": "Last",
   "MAX": "Max",
-  "EMPTY": "Waiting for damage events…"
+  "EMPTY": "Waiting for combat events…",
+  "TAB_METER": "Meter",
+  "TAB_CARDS": "Card Usage",
+  "TAB_RECEIVED": "Received Damage",
+  "CARD_USAGE": "Card Usage",
+  "CARDS": "Cards",
+  "ATTACK": "Attack",
+  "SKILL": "Skill",
+  "POWER": "Power",
+  "OTHER": "Other",
+  "AUTO": "Auto",
+  "RECEIVED_DAMAGE": "Received Damage",
+  "INCOMING": "Incoming",
+  "BLOCKED": "Blocked",
+  "HP_LOST": "HP Lost",
+  "BLOCK_GAINED": "Block+"
 }
