@@ -1,0 +1,10 @@
+{
+  "TITLE": "DPS Meter",
+  "PLAYER": "Player",
+  "PCT": "%",
+  "TOTAL": "Total",
+  "COMBAT": "Combat",
+  "LAST": "Last",
+  "MAX": "Max",
+  "EMPTY": "Waiting for damage events…"
+}

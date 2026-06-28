@@ -1,0 +1,11 @@
+{
+  "id": "DPSMeter",
+  "name": "DPS Meter",
+  "author": "pat, based on BAIGUANGMEI",
+  "description": "Shows a local display-only DPS meter with current-combat and total-run damage.",
+  "version": "0.1.0",
+  "has_pck": false,
+  "has_dll": true,
+  "dependencies": [],
+  "affects_gameplay": false
+}

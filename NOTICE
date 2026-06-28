@@ -1,0 +1,7 @@
+DPS Meter is based on BAIGUANGMEI/STS2-DamageTracker:
+https://github.com/BAIGUANGMEI/STS2-DamageTracker
+
+The upstream project is licensed under the MIT License. The original MIT
+license text is preserved in LICENSE. Local changes rebrand the project as
+DPS Meter, keep English-only user-facing text, and preserve display-only
+Slay the Spire 2 mod metadata.

@@ -1,0 +1,37 @@
+# Godot cache and export temp
+.godot/
+/android/
+
+# .NET build output
+bin/
+obj/
+
+# Visual Studio / Rider / VS Code temp
+.vs/
+*.user
+*.rsuser
+*.suo
+
+# OS junk
+Thumbs.db
+Desktop.ini
+
+# Mod build artifacts
+*.pck
+*.dll
+*.pdb
+
+# Packed export folders
+exports/
+build/
+dist/
+
+
+# game-src 
+game-src/
+logs/
+__pycache__/
+*.pyc
+.omx/
+
+.tools/

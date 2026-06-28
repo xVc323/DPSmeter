@@ -1,0 +1,167 @@
+using System.Reflection;
+using Godot;
+using HarmonyLib;
+using MegaCrit.Sts2.Core.Combat;
+using MegaCrit.Sts2.Core.Models;
+using MegaCrit.Sts2.Core.Models.Powers;
+using MegaCrit.Sts2.Core.Entities.Creatures;
+using MegaCrit.Sts2.Core.Entities.Players;
+using MegaCrit.Sts2.Core.GameActions.Multiplayer;
+using MegaCrit.Sts2.Core.Hooks;
+using MegaCrit.Sts2.Core.Logging;
+using MegaCrit.Sts2.Core.Modding;
+using MegaCrit.Sts2.Core.Runs;
+using MegaCrit.Sts2.Core.ValueProps;
+
+namespace DPSMeter;
+
+[ModInitializer("Initialize")]
+public static class ModEntry
+{
+    private static Harmony? _harmony;
+
+    public static void Initialize()
+    {
+        if (_harmony != null)
+        {
+            return;
+        }
+
+        _harmony = new Harmony("local.sts2.dps_meter");
+        PatchHook(nameof(Hook.BeforeCombatStart), nameof(HookPatches.BeforeCombatStartPostfix));
+        PatchHook(nameof(Hook.AfterCombatEnd), nameof(HookPatches.AfterCombatEndPostfix));
+        PatchHook(nameof(Hook.AfterPlayerTurnStart), nameof(HookPatches.AfterPlayerTurnStartPostfix));
+        PatchHook(nameof(Hook.AfterDamageGiven), nameof(HookPatches.AfterDamageGivenPostfix));
+        PatchHook(nameof(Hook.AfterDiedToDoom), nameof(HookPatches.AfterDiedToDoomPostfix));
+        PatchMethod(typeof(PoisonPower), nameof(PoisonPower.AfterSideTurnStart), nameof(StatusPowerPatches.PoisonAfterSideTurnStartPrefix), nameof(StatusPowerPatches.PoisonAfterSideTurnStartPostfix));
+        PatchMethod(typeof(DoomPower), nameof(DoomPower.DoomKill), nameof(StatusPowerPatches.DoomKillPrefix));
+
+        // Write to log file for debugging
+        string logDir = OS.GetUserDataDir();
+        string logPath = Path.Combine(logDir, "..", "DPSMeter_debug.log");
+        using (var log = Godot.FileAccess.Open(logPath, Godot.FileAccess.ModeFlags.WriteRead))
+        {
+            if (log != null)
+            {
+                log.StoreLine($"[{DateTime.Now:HH:mm:ss}] DPSMeter Init - hooks: {_harmony?.GetPatchedMethods().Count() ?? 0}");
+            }
+        }
+        GD.Print("[DPSMeter] Log path: " + logPath);
+        Log.Info("DPSMeter initialized");
+    }
+
+    private static void PatchHook(string hookName, string postfixName)
+    {
+        MethodInfo original = AccessTools.Method(typeof(Hook), hookName)
+            ?? throw new MissingMethodException(typeof(Hook).FullName, hookName);
+        MethodInfo postfix = AccessTools.Method(typeof(HookPatches), postfixName)
+            ?? throw new MissingMethodException(typeof(HookPatches).FullName, postfixName);
+
+        _harmony!.Patch(original, postfix: new HarmonyMethod(postfix));
+    }
+
+    private static void PatchMethod(Type ownerType, string methodName, string? prefixName = null, string? postfixName = null)
+    {
+        MethodInfo original = AccessTools.Method(ownerType, methodName)
+            ?? throw new MissingMethodException(ownerType.FullName, methodName);
+        HarmonyMethod? prefix = prefixName != null
+            ? new HarmonyMethod(AccessTools.Method(typeof(StatusPowerPatches), prefixName)
+                ?? throw new MissingMethodException(typeof(StatusPowerPatches).FullName, prefixName))
+            : null;
+        HarmonyMethod? postfix = postfixName != null
+            ? new HarmonyMethod(AccessTools.Method(typeof(StatusPowerPatches), postfixName)
+                ?? throw new MissingMethodException(typeof(StatusPowerPatches).FullName, postfixName))
+            : null;
+
+        _harmony!.Patch(original, prefix: prefix, postfix: postfix);
+    }
+}
+
+internal static class HookPatches
+{
+    private static bool _overlayScheduled;
+    
+    // Hook signature:
+    // BeforeCombatStart(IRunState runState, CombatState? combatState)
+    public static void BeforeCombatStartPostfix(IRunState? runState, CombatState? combatState)
+    {
+        RunDPSMeterService.BeginRun(runState);
+        RunDPSMeterService.BeginCombat(runState, combatState);
+        
+        // Create overlay when first combat starts (game loop is guaranteed to be ready by now)
+        if (!_overlayScheduled)
+        {
+            _overlayScheduled = true;
+            DPSMeterOverlay.EnsureCreated();
+        }
+    }
+
+    // Hook signature:
+    // AfterCombatEnd(IRunState runState, CombatState? combatState, CombatRoom room)
+    public static void AfterCombatEndPostfix(IRunState? runState, CombatState? combatState)
+    {
+        RunDPSMeterService.EndCombat();
+    }
+
+    // Hook signature:
+    // AfterPlayerTurnStart(CombatState combatState, PlayerChoiceContext choiceContext, Player player)
+    public static void AfterPlayerTurnStartPostfix(CombatState combatState, PlayerChoiceContext? choiceContext, Player player)
+    {
+        RunDPSMeterService.EnsurePlayersRegistered(combatState.RunState, combatState);
+        RunDPSMeterService.NotePlayer(player);
+    }
+
+    // Hook signature:
+    // AfterDamageGiven(PlayerChoiceContext choiceContext, CombatState combatState, 
+    //                   Creature? dealer, DamageResult results, ValueProp props, 
+    //                   Creature target, CardModel? cardSource)
+    public static void AfterDamageGivenPostfix(
+        PlayerChoiceContext? choiceContext,
+        CombatState? combatState,
+        Creature? dealer,
+        DamageResult? results,
+        ValueProp props,
+        Creature? target,
+        CardModel? cardSource)
+    {
+        // Only record damage dealt by player creatures; skip enemy/monster damage
+        if (dealer != null && !ReflectionHelpers.IsPlayerCreature(dealer))
+            return;
+
+        RunDPSMeterService.EnsurePlayersRegistered(combatState?.RunState, combatState);
+
+        if (RunDPSMeterService.TryRecordPoisonDamage(dealer, target, cardSource, results))
+            return;
+
+        RunDPSMeterService.RecordDamage(dealer, results, target, cardSource);
+    }
+
+    // Hook signature:
+    // AfterDiedToDoom(CombatState combatState, IReadOnlyList<Creature> creatures)
+    public static void AfterDiedToDoomPostfix(CombatState combatState, System.Collections.Generic.IReadOnlyList<Creature>? creatures)
+    {
+        // Attribute Doom kill damage to the player who applied Doom.
+        if (creatures != null)
+        {
+            RunDPSMeterService.RecordDoomDamage(combatState, creatures);
+        }
+    }
+}
+
+internal static class StatusPowerPatches
+{
+    public static void PoisonAfterSideTurnStartPrefix(PoisonPower __instance, CombatSide side, out object? __state)
+    {
+        __state = RunDPSMeterService.BeginPoisonTracking(__instance, side);
+    }
+
+    public static void PoisonAfterSideTurnStartPostfix(ref Task __result, object? __state)
+    {
+        __result = RunDPSMeterService.CompletePoisonTrackingAsync(__result, __state);
+    }
+
+    public static void DoomKillPrefix(System.Collections.Generic.IReadOnlyList<Creature> creatures)
+    {
+        RunDPSMeterService.CapturePendingDoomDamage(creatures);
+    }
+}
