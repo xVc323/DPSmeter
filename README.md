@@ -8,13 +8,18 @@ It is explicitly display-only:
 "affects_gameplay": false
 ```
 
+<p align="center">
+  <img src="docs/demo.gif" alt="DPS Meter overlay demo" width="760">
+</p>
+
 STS2 only blocks multiplayer joins when **gameplay-affecting** mods differ. DPS Meter is a non-gameplay UI overlay, so mismatches with unmodded players are allowed by the game's multiplayer compatibility check.
 
 ## Features
 
 - Current-combat damage per player
 - Total run damage per player
-- Last hit and max hit values
+- Last hit and max hit values, including grouped multi-hit / multi-target card damage
+- Card Usage and Received Damage tabs
 - Draggable in-game Godot overlay
 - DLL-only install; no separate `.pck` is required
 - Compact and side-hidden UI states
