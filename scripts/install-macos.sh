@@ -10,6 +10,18 @@ log() { printf '[DPSMeter] %s\n' "$*"; }
 fail() { printf '[DPSMeter] ERROR: %s\n' "$*" >&2; exit 1; }
 run() { if [[ "$DRY_RUN" == "1" ]]; then printf '[DPSMeter] DRY-RUN: '; printf '%q ' "$@"; printf '\n'; else "$@"; fi; }
 
+require_command() {
+  command -v "$1" >/dev/null 2>&1 || fail "Missing required command: $1"
+}
+
+check_requirements() {
+  require_command curl
+  require_command unzip
+  require_command find
+  require_command pgrep
+  require_command mktemp
+}
+
 backup_mod_dir() {
   local mod_dir="$1"
   local mods_root="$2"
@@ -66,15 +78,11 @@ fetch_payload() {
   [[ -f "$temp_dir/payload/${MOD_ID}.dll" ]] || fail "Package missing ${MOD_ID}.dll"
   [[ -f "$temp_dir/payload/${MOD_ID}.json" ]] || fail "Package missing ${MOD_ID}.json"
 
-  python3 - "$temp_dir/payload/${MOD_ID}.json" <<'PY'
-import json, pathlib, sys
-path = pathlib.Path(sys.argv[1])
-data = json.loads(path.read_text())
-assert data["id"] == "DPSMeter", data
-assert data["has_dll"] is True, data
-assert data["has_pck"] is False, data
-assert data["affects_gameplay"] is False, data
-PY
+  local descriptor="$temp_dir/payload/${MOD_ID}.json"
+  grep -Eq '"id"[[:space:]]*:[[:space:]]*"DPSMeter"' "$descriptor" || fail "Package descriptor has the wrong mod id."
+  grep -Eq '"has_dll"[[:space:]]*:[[:space:]]*true' "$descriptor" || fail "Package descriptor must declare has_dll=true."
+  grep -Eq '"has_pck"[[:space:]]*:[[:space:]]*false' "$descriptor" || fail "Package descriptor must declare has_pck=false."
+  grep -Eq '"affects_gameplay"[[:space:]]*:[[:space:]]*false' "$descriptor" || fail "Package descriptor must declare affects_gameplay=false."
 }
 
 install_payload() {
@@ -91,6 +99,7 @@ install_payload() {
 }
 
 main() {
+  check_requirements
   if pgrep -f "Slay the Spire 2" >/dev/null 2>&1; then
     fail "Slay the Spire 2 appears to be running. Quit the game before installing."
   fi

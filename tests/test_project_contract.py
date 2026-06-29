@@ -122,8 +122,8 @@ class DPSMeterProjectContract(unittest.TestCase):
     def test_v02_version_is_declared(self):
         descriptor = self.read_json("DPSMeter.json")
         manifest = self.read_json("mod_manifest.json")
-        self.assertEqual(descriptor["version"], "0.2.2")
-        self.assertEqual(manifest["version"], "0.2.2")
+        self.assertEqual(descriptor["version"], "0.2.3")
+        self.assertEqual(manifest["version"], "0.2.3")
 
 
     def test_max_damage_uses_card_play_aggregation_for_multi_hit_and_aoe(self):
@@ -136,6 +136,43 @@ class DPSMeterProjectContract(unittest.TestCase):
         self.assertIn("CardDamageAggregationContext", service)
         self.assertIn("TryAddToActiveCardDamageAggregation", service)
         self.assertRegex(service, r"CompleteCardDamageAggregation[\s\S]*?MaxHitDamage")
+
+
+    def test_power_and_pet_damage_are_attributed_to_the_owning_player(self):
+        mod_entry = self.read_text("src/ModEntry.cs")
+        service = self.read_text("src/RunDPSMeterService.cs")
+        helpers = self.read_text("src/ReflectionHelpers.cs")
+
+        self.assertIn("PatchPowerDamageMethod", mod_entry)
+        for power_type in [
+            "HauntPower",
+            "StranglePower",
+            "DemisePower",
+            "FlameBarrierPower",
+            "ConstrictPower",
+            "DisintegrationPower",
+            "ThornsPower",
+            "ReflectPower",
+        ]:
+            self.assertIn(f"typeof({power_type})", mod_entry)
+
+        self.assertIn("SourceDamageTrackingContext", service)
+        self.assertIn("CurrentSourceDamageContext", service)
+        self.assertIn("HasActivePlayerDamageSource", service)
+        self.assertRegex(service, r"RecordDamage[\s\S]*?TryResolveCurrentDamageSourceHandle")
+        self.assertRegex(mod_entry, r"AfterDamageGivenPostfix[\s\S]*?HasActivePlayerDamageSource")
+
+        self.assertIn("creature.PetOwner", helpers)
+
+
+    def test_damage_dealt_excludes_player_targets_but_received_tracks_lethal_hits(self):
+        mod_entry = self.read_text("src/ModEntry.cs")
+        service = self.read_text("src/RunDPSMeterService.cs")
+
+        self.assertRegex(service, r"RecordDamage[\s\S]*?IsPlayerDamageTarget")
+        self.assertIn("RecordDamageReceivedFromDamageGiven", service)
+        self.assertRegex(service, r"RecordDamageReceivedFromDamageGiven[\s\S]*?WasTargetKilled")
+        self.assertRegex(mod_entry, r"AfterDamageGivenPostfix[\s\S]*?RecordDamageReceivedFromDamageGiven")
 
 
 

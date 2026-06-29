@@ -29,6 +29,19 @@ STS2 only blocks multiplayer joins when **gameplay-affecting** mods differ. DPS 
 
 The installer downloads `DPSMeter.zip` from the latest GitHub Release unless `DPSMETER_PACKAGE` points at a local zip.
 
+Install requirements:
+
+- Slay the Spire 2 installed locally through Steam or at a path passed with `STS2_DIR`.
+- The game must be fully closed while installing or uninstalling.
+- macOS: `bash`, `curl`, and `unzip` available in Terminal. These are normally built into macOS.
+- Windows: PowerShell and internet access to GitHub releases.
+
+If Steam is installed in a custom library on macOS, run:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/xvc323/DPSmeter/main/scripts/install-macos.sh | STS2_DIR="/path/to/Slay the Spire 2" bash
+```
+
 ### macOS install
 
 ```bash

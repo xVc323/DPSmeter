@@ -29,9 +29,13 @@ class DistributionContract(unittest.TestCase):
     def test_macos_installer_targets_executable_adjacent_mods_and_does_not_touch_saves(self):
         script = self.read("scripts/install-macos.sh")
         self.assertIn("SlayTheSpire2.app/Contents/MacOS/mods", script)
+        self.assertIn("require_command curl", script)
+        self.assertIn("require_command unzip", script)
         self.assertIn("DPSMETER_PACKAGE", script)
         self.assertIn("releases/latest/download/DPSMeter.zip", script)
         self.assertIn("backup_mod_dir", script)
+        self.assertNotIn("python3", script)
+        self.assertNotIn("jq", script)
         self.assertNotRegex(script, r"ln\s+-s")
         self.assertNotIn("modded/profile", script)
         self.assertNotIn("profile1/saves", script)

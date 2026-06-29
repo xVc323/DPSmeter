@@ -41,6 +41,7 @@ public static class ModEntry
         PatchMethod(typeof(PoisonPower), nameof(PoisonPower.AfterSideTurnStart), nameof(StatusPowerPatches.PoisonAfterSideTurnStartPrefix), nameof(StatusPowerPatches.PoisonAfterSideTurnStartPostfix));
         PatchMethod(typeof(DoomPower), nameof(DoomPower.DoomKill), nameof(StatusPowerPatches.DoomKillPrefix));
         PatchMethod(typeof(RunManager), nameof(RunManager.OnEnded), postfixName: nameof(HookPatches.RunEndedPostfix), patchType: typeof(HookPatches));
+        PatchPowerDamageMethods();
 
         // Write to log file for debugging
         string logDir = OS.GetUserDataDir();
@@ -82,6 +83,47 @@ public static class ModEntry
             : null;
 
         _harmony!.Patch(original, prefix: prefix, postfix: postfix);
+    }
+
+    private static void PatchPowerDamageMethods()
+    {
+        PatchPowerDamageMethod(typeof(FlameBarrierPower), nameof(FlameBarrierPower.AfterDamageReceived));
+        PatchPowerDamageMethod(typeof(OutbreakPower), nameof(OutbreakPower.AfterPowerAmountChanged));
+        PatchPowerDamageMethod(typeof(ConstrictPower), nameof(ConstrictPower.AfterSideTurnEnd));
+        PatchPowerDamageMethod(typeof(ThornsPower), nameof(ThornsPower.BeforeDamageReceived));
+        PatchPowerDamageMethod(typeof(NecroMasteryPower), nameof(NecroMasteryPower.AfterCurrentHpChanged));
+        PatchPowerDamageMethod(typeof(MagicBombPower), nameof(MagicBombPower.AfterSideTurnEnd));
+        PatchPowerDamageMethod(typeof(RollingBoulderPower), nameof(RollingBoulderPower.AfterPlayerTurnStart));
+        PatchPowerDamageMethod(typeof(PanachePower), nameof(PanachePower.AfterCardPlayed));
+        PatchPowerDamageMethod(typeof(BlackHolePower), "DealDamageToAllEnemies");
+        PatchPowerDamageMethod(typeof(DemisePower), nameof(DemisePower.AfterSideTurnEnd));
+        PatchPowerDamageMethod(typeof(ThunderPower), nameof(ThunderPower.AfterOrbEvoked));
+        PatchPowerDamageMethod(typeof(GalvanicPower), nameof(GalvanicPower.AfterCardPlayed));
+        PatchPowerDamageMethod(typeof(SpeedsterPower), nameof(SpeedsterPower.AfterCardDrawn));
+        PatchPowerDamageMethod(typeof(SerpentFormPower), nameof(SerpentFormPower.AfterCardPlayed));
+        PatchPowerDamageMethod(typeof(HailstormPower), nameof(HailstormPower.BeforeSideTurnEnd));
+        PatchPowerDamageMethod(typeof(DisintegrationPower), nameof(DisintegrationPower.AfterSideTurnEndLate));
+        PatchPowerDamageMethod(typeof(SmokestackPower), nameof(SmokestackPower.AfterCardGeneratedForCombat));
+        PatchPowerDamageMethod(typeof(TheBombPower), nameof(TheBombPower.BeforeSideTurnEnd));
+        PatchPowerDamageMethod(typeof(JuggernautPower), nameof(JuggernautPower.AfterBlockGained));
+        PatchPowerDamageMethod(typeof(InfernoPower), nameof(InfernoPower.AfterPlayerTurnStart));
+        PatchPowerDamageMethod(typeof(InfernoPower), nameof(InfernoPower.AfterDamageReceived));
+        PatchPowerDamageMethod(typeof(ReflectPower), nameof(ReflectPower.AfterDamageReceived));
+        PatchPowerDamageMethod(typeof(StranglePower), nameof(StranglePower.AfterCardPlayed));
+        PatchPowerDamageMethod(typeof(CrimsonMantlePower), nameof(CrimsonMantlePower.AfterPlayerTurnStart));
+        PatchPowerDamageMethod(typeof(SleightOfFleshPower), nameof(SleightOfFleshPower.AfterPowerAmountChanged));
+        PatchPowerDamageMethod(typeof(GravityPower), nameof(GravityPower.AfterCardPlayed));
+        PatchPowerDamageMethod(typeof(HauntPower), nameof(HauntPower.AfterCardPlayed));
+    }
+
+    private static void PatchPowerDamageMethod(Type ownerType, string methodName)
+    {
+        PatchMethod(
+            ownerType,
+            methodName,
+            nameof(PowerDamagePatches.PowerDamagePrefix),
+            nameof(PowerDamagePatches.PowerDamagePostfix),
+            typeof(PowerDamagePatches));
     }
 }
 
@@ -151,9 +193,14 @@ internal static class HookPatches
         CardModel? cardSource)
     {
         EnsureOverlayCreated();
-        // Only record damage dealt by player creatures; skip enemy/monster damage
-        if (dealer != null && !ReflectionHelpers.IsPlayerCreature(dealer))
+        RunDPSMeterService.RecordDamageReceivedFromDamageGiven(target, results);
+
+        if (dealer != null &&
+            !ReflectionHelpers.IsPlayerCreature(dealer) &&
+            !RunDPSMeterService.HasActivePlayerDamageSource())
+        {
             return;
+        }
 
         RunDPSMeterService.EnsurePlayersRegistered(combatState?.RunState, combatState);
 
@@ -212,6 +259,19 @@ internal static class HookPatches
         {
             RunDPSMeterService.RecordDoomDamage(combatState, creatures);
         }
+    }
+}
+
+internal static class PowerDamagePatches
+{
+    public static void PowerDamagePrefix(PowerModel __instance, out object? __state)
+    {
+        __state = RunDPSMeterService.BeginPowerDamageTracking(__instance);
+    }
+
+    public static void PowerDamagePostfix(ref Task __result, object? __state)
+    {
+        __result = RunDPSMeterService.CompletePowerDamageTrackingAsync(__result, __state);
     }
 }
 

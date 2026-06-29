@@ -23,6 +23,7 @@ public static class RunDPSMeterService
     private static ulong? _activePlayerKey;
     private static int _damageCounter;
     private static readonly AsyncLocal<PoisonTrackingContext?> CurrentPoisonContext = new();
+    private static readonly AsyncLocal<SourceDamageTrackingContext?> CurrentSourceDamageContext = new();
     private static readonly AsyncLocal<CardDamageAggregationContext?> CurrentCardDamageAggregation = new();
     private static readonly Dictionary<Creature, PendingDoomDamage> PendingDoomDamageByCreature = new();
 
@@ -215,6 +216,21 @@ public static class RunDPSMeterService
 
     public static void RecordDamageReceived(Creature? target, DamageResult? result)
     {
+        RecordDamageReceivedInternal(target, result);
+    }
+
+    public static void RecordDamageReceivedFromDamageGiven(Creature? target, DamageResult? result)
+    {
+        if (target?.IsDead != true || result?.WasTargetKilled != true)
+        {
+            return;
+        }
+
+        RecordDamageReceivedInternal(target, result);
+    }
+
+    private static void RecordDamageReceivedInternal(Creature? target, DamageResult? result)
+    {
         if (target == null || result == null || !ReflectionHelpers.IsPlayerCreature(target))
         {
             return;
@@ -303,6 +319,7 @@ public static class RunDPSMeterService
             _activePlayerKey = null;
             _damageCounter = 0;
             CurrentPoisonContext.Value = null;
+            CurrentSourceDamageContext.Value = null;
             CurrentCardDamageAggregation.Value = null;
         }
 
@@ -356,14 +373,86 @@ public static class RunDPSMeterService
             return;
         }
 
-        if (!ReflectionHelpers.TryResolvePlayerHandle(dealer, out PlayerHandle handle))
+        if (IsPlayerDamageTarget(result, target))
         {
-            if (!ReflectionHelpers.TryResolvePlayerHandle(cardSource, out handle))
-            {
-                return;
-            }
+            return;
         }
 
+        if (!TryResolveDamageDealerHandle(dealer, cardSource, out PlayerHandle handle))
+        {
+            return;
+        }
+
+        RecordResolvedDamage(handle, damage);
+    }
+
+    public static bool HasActivePlayerDamageSource()
+    {
+        return TryResolveCurrentDamageSourceHandle(out _);
+    }
+
+    public static object? BeginPowerDamageTracking(PowerModel power)
+    {
+        object? source = power.Applier ?? power.Owner;
+        SourceDamageTrackingContext context = new(source, CurrentSourceDamageContext.Value);
+        CurrentSourceDamageContext.Value = context;
+        return context;
+    }
+
+    public static Task CompletePowerDamageTrackingAsync(Task originalTask, object? state)
+    {
+        if (state is not SourceDamageTrackingContext context)
+        {
+            return originalTask;
+        }
+
+        return AwaitAndRestoreSourceDamageContextAsync(originalTask, context);
+    }
+
+    private static bool TryResolveDamageDealerHandle(object? dealer, object? cardSource, out PlayerHandle handle)
+    {
+        if (ReflectionHelpers.TryResolvePlayerHandle(dealer, out handle))
+        {
+            return true;
+        }
+
+        if (ReflectionHelpers.TryResolvePlayerHandle(cardSource, out handle))
+        {
+            return true;
+        }
+
+        return TryResolveCurrentDamageSourceHandle(out handle);
+    }
+
+    private static bool TryResolveCurrentDamageSourceHandle(out PlayerHandle handle)
+    {
+        SourceDamageTrackingContext? context = CurrentSourceDamageContext.Value;
+        while (context != null)
+        {
+            if (ReflectionHelpers.TryResolvePlayerHandle(context.Source, out handle))
+            {
+                return true;
+            }
+
+            context = context.Previous;
+        }
+
+        handle = default;
+        return false;
+    }
+
+    private static bool IsPlayerDamageTarget(object? result, object? target)
+    {
+        if (result is DamageResult damageResult && ReflectionHelpers.IsPlayerCreature(damageResult.Receiver))
+        {
+            return true;
+        }
+
+        return ReflectionHelpers.IsPlayerCreature(target);
+    }
+
+    private static void RecordResolvedDamage(PlayerHandle handle, decimal damage)
+    {
         lock (SyncRoot)
         {
             PlayerDamageSnapshot snapshot = GetOrCreate(handle);
@@ -485,6 +574,8 @@ public static class RunDPSMeterService
     private static void RecordStatusDamage(object? applier, decimal damage, object? target, string damageType)
     {
         if (damage <= 0) return;
+
+        if (IsPlayerDamageTarget(null, target)) return;
         
         PlayerHandle? handle = null;
         
@@ -554,6 +645,21 @@ public static class RunDPSMeterService
             if (ReferenceEquals(CurrentPoisonContext.Value, context))
             {
                 CurrentPoisonContext.Value = context.Previous;
+            }
+        }
+    }
+
+    private static async Task AwaitAndRestoreSourceDamageContextAsync(Task originalTask, SourceDamageTrackingContext context)
+    {
+        try
+        {
+            await originalTask;
+        }
+        finally
+        {
+            if (ReferenceEquals(CurrentSourceDamageContext.Value, context))
+            {
+                CurrentSourceDamageContext.Value = context.Previous;
             }
         }
     }
@@ -884,6 +990,19 @@ internal sealed class PoisonTrackingContext
     public object Applier { get; }
 
     public PoisonTrackingContext? Previous { get; }
+}
+
+internal sealed class SourceDamageTrackingContext
+{
+    public SourceDamageTrackingContext(object? source, SourceDamageTrackingContext? previous)
+    {
+        Source = source;
+        Previous = previous;
+    }
+
+    public object? Source { get; }
+
+    public SourceDamageTrackingContext? Previous { get; }
 }
 
 internal sealed class PendingDoomDamage
