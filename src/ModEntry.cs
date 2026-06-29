@@ -54,6 +54,7 @@ public static class ModEntry
         }
         GD.Print("[DPSMeter] Log path: " + logPath);
         Log.Info("DPSMeter initialized");
+        DPSMeterOverlay.EnsureCreated();
     }
 
     private static void PatchHook(string hookName, string postfixName)
@@ -86,27 +87,25 @@ public static class ModEntry
 
 internal static class HookPatches
 {
-    private static bool _overlayScheduled;
-    
+    private static void EnsureOverlayCreated()
+    {
+        DPSMeterOverlay.EnsureCreated();
+    }
+
     // Hook signature:
     // BeforeCombatStart(IRunState runState, CombatState? combatState)
     public static void BeforeCombatStartPostfix(IRunState? runState, CombatState? combatState)
     {
+        EnsureOverlayCreated();
         RunDPSMeterService.BeginRun(runState);
         RunDPSMeterService.BeginCombat(runState, combatState);
-        
-        // Create overlay when first combat starts (game loop is guaranteed to be ready by now)
-        if (!_overlayScheduled)
-        {
-            _overlayScheduled = true;
-            DPSMeterOverlay.EnsureCreated();
-        }
     }
 
     // Hook signature:
     // AfterCombatEnd(IRunState runState, CombatState? combatState, CombatRoom room)
     public static void AfterCombatEndPostfix(IRunState? runState, CombatState? combatState)
     {
+        EnsureOverlayCreated();
         RunDPSMeterService.EndCombat();
     }
 
@@ -114,6 +113,7 @@ internal static class HookPatches
     // AfterPlayerTurnStart(CombatState combatState, PlayerChoiceContext choiceContext, Player player)
     public static void AfterPlayerTurnStartPostfix(CombatState combatState, PlayerChoiceContext? choiceContext, Player player)
     {
+        EnsureOverlayCreated();
         RunDPSMeterService.EnsurePlayersRegistered(combatState.RunState, combatState);
         RunDPSMeterService.NotePlayer(player);
     }
@@ -122,6 +122,7 @@ internal static class HookPatches
     // BeforeCardPlayed(ICombatState combatState, CardPlay cardPlay)
     public static void BeforeCardPlayedPostfix(ICombatState? combatState, CardPlay? cardPlay)
     {
+        EnsureOverlayCreated();
         RunDPSMeterService.EnsurePlayersRegistered(combatState);
         RunDPSMeterService.BeginCardDamageAggregation(cardPlay);
     }
@@ -130,6 +131,7 @@ internal static class HookPatches
     // AfterCardPlayed(ICombatState combatState, PlayerChoiceContext choiceContext, CardPlay cardPlay)
     public static void AfterCardPlayedPostfix(ICombatState? combatState, PlayerChoiceContext? choiceContext, CardPlay? cardPlay)
     {
+        EnsureOverlayCreated();
         RunDPSMeterService.EnsurePlayersRegistered(combatState);
         RunDPSMeterService.CompleteCardDamageAggregation(cardPlay);
         RunDPSMeterService.RecordCardPlayed(cardPlay);
@@ -148,6 +150,7 @@ internal static class HookPatches
         Creature? target,
         CardModel? cardSource)
     {
+        EnsureOverlayCreated();
         // Only record damage dealt by player creatures; skip enemy/monster damage
         if (dealer != null && !ReflectionHelpers.IsPlayerCreature(dealer))
             return;
@@ -173,6 +176,7 @@ internal static class HookPatches
         Creature? dealer,
         CardModel? cardSource)
     {
+        EnsureOverlayCreated();
         RunDPSMeterService.EnsurePlayersRegistered(runState, combatState);
         RunDPSMeterService.RecordDamageReceived(target, result);
     }
@@ -186,6 +190,7 @@ internal static class HookPatches
         ValueProp props,
         CardModel? cardSource)
     {
+        EnsureOverlayCreated();
         RunDPSMeterService.EnsurePlayersRegistered(combatState);
         RunDPSMeterService.RecordBlockGained(creature, amount);
     }
@@ -193,6 +198,7 @@ internal static class HookPatches
     // RunManager.OnEnded(bool isVictory)
     public static void RunEndedPostfix(bool isVictory)
     {
+        EnsureOverlayCreated();
         RunDPSMeterService.EndRun();
     }
 
@@ -200,6 +206,7 @@ internal static class HookPatches
     // AfterDiedToDoom(CombatState combatState, IReadOnlyList<Creature> creatures)
     public static void AfterDiedToDoomPostfix(CombatState combatState, System.Collections.Generic.IReadOnlyList<Creature>? creatures)
     {
+        EnsureOverlayCreated();
         // Attribute Doom kill damage to the player who applied Doom.
         if (creatures != null)
         {

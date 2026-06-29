@@ -1128,7 +1128,6 @@ public sealed partial class DPSMeterOverlay : CanvasLayer
     {
         if (IsInstanceValid(_instance))
         {
-            GD.Print("[DPSMeter] EnsureCreated: already exists, skipping");
             return;
         }
         if (Engine.GetMainLoop() is not SceneTree tree || tree.Root == null)

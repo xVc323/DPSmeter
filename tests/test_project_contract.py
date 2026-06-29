@@ -122,8 +122,8 @@ class DPSMeterProjectContract(unittest.TestCase):
     def test_v02_version_is_declared(self):
         descriptor = self.read_json("DPSMeter.json")
         manifest = self.read_json("mod_manifest.json")
-        self.assertEqual(descriptor["version"], "0.2.1")
-        self.assertEqual(manifest["version"], "0.2.1")
+        self.assertEqual(descriptor["version"], "0.2.2")
+        self.assertEqual(manifest["version"], "0.2.2")
 
 
     def test_max_damage_uses_card_play_aggregation_for_multi_hit_and_aoe(self):
@@ -137,6 +137,15 @@ class DPSMeterProjectContract(unittest.TestCase):
         self.assertIn("TryAddToActiveCardDamageAggregation", service)
         self.assertRegex(service, r"CompleteCardDamageAggregation[\s\S]*?MaxHitDamage")
 
+
+
+    def test_overlay_creation_is_not_limited_to_new_combat_start(self):
+        mod_entry = self.read_text("src/ModEntry.cs")
+
+        self.assertRegex(mod_entry, r"Initialize[\s\S]*?DPSMeterOverlay\.EnsureCreated\(\)")
+        self.assertIn("EnsureOverlayCreated", mod_entry)
+        self.assertRegex(mod_entry, r"AfterPlayerTurnStartPostfix[\s\S]*?EnsureOverlayCreated\(\)")
+        self.assertRegex(mod_entry, r"AfterDamageGivenPostfix[\s\S]*?EnsureOverlayCreated\(\)")
 
     def test_run_end_resets_meter_and_persisted_state(self):
         mod_entry = self.read_text("src/ModEntry.cs")

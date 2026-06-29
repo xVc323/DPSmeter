@@ -31,7 +31,7 @@ class DistributionContract(unittest.TestCase):
         self.assertIn("SlayTheSpire2.app/Contents/MacOS/mods", script)
         self.assertIn("DPSMETER_PACKAGE", script)
         self.assertIn("releases/latest/download/DPSMeter.zip", script)
-        self.assertIn("backup_path", script)
+        self.assertIn("backup_mod_dir", script)
         self.assertNotRegex(script, r"ln\s+-s")
         self.assertNotIn("modded/profile", script)
         self.assertNotIn("profile1/saves", script)
@@ -56,7 +56,7 @@ class DistributionContract(unittest.TestCase):
         self.assertIn("Split-Path", script)
         self.assertIn("mods", script)
         self.assertIn("DPSMeter.zip", script)
-        self.assertIn("Backup-Path", script)
+        self.assertIn("Backup-ModDir", script)
         self.assertNotRegex(script, r"ItemType\s+Junction")
         self.assertNotIn("Share-Saves", script)
         self.assertNotIn("Convert-SaveLinks", script)
@@ -72,6 +72,18 @@ class DistributionContract(unittest.TestCase):
         self.assertNotIn("Convert-SaveLinks", script)
         self.assertNotIn("Share-Saves", script)
         self.assertNotIn("profile1\\saves' -Recurse", script)
+
+
+    def test_installers_keep_backups_outside_scanned_mods_folder(self):
+        mac = self.read("scripts/install-macos.sh")
+        win = self.read("scripts/install-windows.ps1")
+
+        self.assertIn("backup_mod_dir", mac)
+        self.assertIn("dpsmeter-backups", mac)
+        self.assertNotIn('backup_path "$mod_dir"', mac)
+        self.assertIn("Backup-ModDir", win)
+        self.assertIn("dpsmeter-backups", win)
+        self.assertNotIn("Backup-Path $ModDir", win)
 
     def test_readme_documents_public_install_and_uninstall(self):
         readme = self.read("README.md")

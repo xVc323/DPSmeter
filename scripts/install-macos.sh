@@ -10,14 +10,17 @@ log() { printf '[DPSMeter] %s\n' "$*"; }
 fail() { printf '[DPSMeter] ERROR: %s\n' "$*" >&2; exit 1; }
 run() { if [[ "$DRY_RUN" == "1" ]]; then printf '[DPSMeter] DRY-RUN: '; printf '%q ' "$@"; printf '\n'; else "$@"; fi; }
 
-backup_path() {
-  local path="$1"
-  local stamp
+backup_mod_dir() {
+  local mod_dir="$1"
+  local mods_root="$2"
+  local stamp backup_root backup
   stamp="$(date +%Y%m%d-%H%M%S)"
-  local backup="${path}.backup-before-dpsmeter-${stamp}"
-  if [[ -e "$path" || -L "$path" ]]; then
-    run cp -a "$path" "$backup"
-    log "Backed up $path -> $backup"
+  backup_root="$(dirname "$mods_root")/dpsmeter-backups"
+  backup="$backup_root/${MOD_ID}.backup-before-dpsmeter-${stamp}"
+  if [[ -e "$mod_dir" || -L "$mod_dir" ]]; then
+    run mkdir -p "$backup_root"
+    run cp -a "$mod_dir" "$backup"
+    log "Backed up $mod_dir -> $backup"
   fi
 }
 
@@ -80,7 +83,7 @@ install_payload() {
   # STS2 scans the mods folder next to OS.GetExecutablePath; on macOS that is inside the app bundle.
   local mods_root="$sts2_dir/SlayTheSpire2.app/Contents/MacOS/mods"
   local mod_dir="$mods_root/$MOD_ID"
-  backup_path "$mod_dir"
+  backup_mod_dir "$mod_dir" "$mods_root"
   run mkdir -p "$mod_dir"
   run cp "$payload_dir/${MOD_ID}.dll" "$mod_dir/${MOD_ID}.dll"
   run cp "$payload_dir/${MOD_ID}.json" "$mod_dir/${MOD_ID}.json"

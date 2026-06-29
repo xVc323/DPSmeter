@@ -8,12 +8,14 @@ function Write-Step([string]$Message) { Write-Host "[DPSMeter] $Message" }
 function Invoke-Step([scriptblock]$Block, [string]$Description) {
     if ($DryRun) { Write-Step "DRY-RUN: $Description" } else { & $Block }
 }
-function Backup-Path([string]$Path) {
-    if (Test-Path -LiteralPath $Path) {
+function Backup-ModDir([string]$ModDir, [string]$ModsRoot) {
+    if (Test-Path -LiteralPath $ModDir) {
         $Stamp = Get-Date -Format 'yyyyMMdd-HHmmss'
-        $Backup = "$Path.backup-before-dpsmeter-$Stamp"
-        Invoke-Step { Copy-Item -LiteralPath $Path -Destination $Backup -Recurse -Force } "Copy $Path to $Backup"
-        Write-Step "Backed up $Path -> $Backup"
+        $BackupRoot = Join-Path (Split-Path -Parent $ModsRoot) 'dpsmeter-backups'
+        $Backup = Join-Path $BackupRoot "$ModId.backup-before-dpsmeter-$Stamp"
+        Invoke-Step { New-Item -ItemType Directory -Path $BackupRoot -Force | Out-Null } "Create $BackupRoot"
+        Invoke-Step { Copy-Item -LiteralPath $ModDir -Destination $Backup -Recurse -Force } "Copy $ModDir to $Backup"
+        Write-Step "Backed up $ModDir -> $Backup"
     }
 }
 function Get-SteamRoots {
@@ -77,7 +79,7 @@ $Temp = Join-Path ([System.IO.Path]::GetTempPath()) "dpsmeter-install-$([guid]::
 New-Item -ItemType Directory -Path $Temp -Force | Out-Null
 try {
     $Payload = Get-Package $Temp
-    Backup-Path $ModDir
+    Backup-ModDir $ModDir $ModsRoot
     Invoke-Step { New-Item -ItemType Directory -Path $ModDir -Force | Out-Null } "Create $ModDir"
     Invoke-Step { Copy-Item -LiteralPath (Join-Path $Payload 'DPSMeter.dll') -Destination (Join-Path $ModDir 'DPSMeter.dll') -Force } "Install DLL"
     Invoke-Step { Copy-Item -LiteralPath (Join-Path $Payload 'DPSMeter.json') -Destination (Join-Path $ModDir 'DPSMeter.json') -Force } "Install manifest"

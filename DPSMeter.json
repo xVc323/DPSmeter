@@ -3,7 +3,7 @@
   "name": "DPS Meter",
   "author": "pat, based on BAIGUANGMEI",
   "description": "Shows a local display-only DPS meter with current-combat and total-run damage.",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "has_pck": false,
   "has_dll": true,
   "dependencies": [],
