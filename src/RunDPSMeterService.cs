@@ -289,6 +289,27 @@ public static class RunDPSMeterService
             Publish();
     }
 
+
+    public static void EndRun()
+    {
+        lock (SyncRoot)
+        {
+            Totals.Clear();
+            PendingDoomDamageByCreature.Clear();
+            _currentRunToken = null;
+            _stableRunId = null;
+            _combatIndex = 0;
+            _combatActive = false;
+            _activePlayerKey = null;
+            _damageCounter = 0;
+            CurrentPoisonContext.Value = null;
+            CurrentCardDamageAggregation.Value = null;
+        }
+
+        DeletePersistedState();
+        Publish();
+    }
+
     public static void EndCombat()
     {
         lock (SyncRoot)
@@ -684,6 +705,22 @@ public static class RunDPSMeterService
         catch
         {
             // Silently ignore save errors
+        }
+    }
+
+
+    private static void DeletePersistedState()
+    {
+        try
+        {
+            if (System.IO.File.Exists(SavePath))
+            {
+                System.IO.File.Delete(SavePath);
+            }
+        }
+        catch
+        {
+            // Silently ignore cleanup errors
         }
     }
 

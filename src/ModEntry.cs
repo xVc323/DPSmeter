@@ -40,6 +40,7 @@ public static class ModEntry
         PatchHook(nameof(Hook.AfterDiedToDoom), nameof(HookPatches.AfterDiedToDoomPostfix));
         PatchMethod(typeof(PoisonPower), nameof(PoisonPower.AfterSideTurnStart), nameof(StatusPowerPatches.PoisonAfterSideTurnStartPrefix), nameof(StatusPowerPatches.PoisonAfterSideTurnStartPostfix));
         PatchMethod(typeof(DoomPower), nameof(DoomPower.DoomKill), nameof(StatusPowerPatches.DoomKillPrefix));
+        PatchMethod(typeof(RunManager), nameof(RunManager.OnEnded), postfixName: nameof(HookPatches.RunEndedPostfix), patchType: typeof(HookPatches));
 
         // Write to log file for debugging
         string logDir = OS.GetUserDataDir();
@@ -65,17 +66,18 @@ public static class ModEntry
         _harmony!.Patch(original, postfix: new HarmonyMethod(postfix));
     }
 
-    private static void PatchMethod(Type ownerType, string methodName, string? prefixName = null, string? postfixName = null)
+    private static void PatchMethod(Type ownerType, string methodName, string? prefixName = null, string? postfixName = null, Type? patchType = null)
     {
+        Type resolvedPatchType = patchType ?? typeof(StatusPowerPatches);
         MethodInfo original = AccessTools.Method(ownerType, methodName)
             ?? throw new MissingMethodException(ownerType.FullName, methodName);
         HarmonyMethod? prefix = prefixName != null
-            ? new HarmonyMethod(AccessTools.Method(typeof(StatusPowerPatches), prefixName)
-                ?? throw new MissingMethodException(typeof(StatusPowerPatches).FullName, prefixName))
+            ? new HarmonyMethod(AccessTools.Method(resolvedPatchType, prefixName)
+                ?? throw new MissingMethodException(resolvedPatchType.FullName, prefixName))
             : null;
         HarmonyMethod? postfix = postfixName != null
-            ? new HarmonyMethod(AccessTools.Method(typeof(StatusPowerPatches), postfixName)
-                ?? throw new MissingMethodException(typeof(StatusPowerPatches).FullName, postfixName))
+            ? new HarmonyMethod(AccessTools.Method(resolvedPatchType, postfixName)
+                ?? throw new MissingMethodException(resolvedPatchType.FullName, postfixName))
             : null;
 
         _harmony!.Patch(original, prefix: prefix, postfix: postfix);
@@ -186,6 +188,12 @@ internal static class HookPatches
     {
         RunDPSMeterService.EnsurePlayersRegistered(combatState);
         RunDPSMeterService.RecordBlockGained(creature, amount);
+    }
+
+    // RunManager.OnEnded(bool isVictory)
+    public static void RunEndedPostfix(bool isVictory)
+    {
+        RunDPSMeterService.EndRun();
     }
 
     // Hook signature:

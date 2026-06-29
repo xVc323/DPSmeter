@@ -122,8 +122,8 @@ class DPSMeterProjectContract(unittest.TestCase):
     def test_v02_version_is_declared(self):
         descriptor = self.read_json("DPSMeter.json")
         manifest = self.read_json("mod_manifest.json")
-        self.assertEqual(descriptor["version"], "0.2.0")
-        self.assertEqual(manifest["version"], "0.2.0")
+        self.assertEqual(descriptor["version"], "0.2.1")
+        self.assertEqual(manifest["version"], "0.2.1")
 
 
     def test_max_damage_uses_card_play_aggregation_for_multi_hit_and_aoe(self):
@@ -136,6 +136,22 @@ class DPSMeterProjectContract(unittest.TestCase):
         self.assertIn("CardDamageAggregationContext", service)
         self.assertIn("TryAddToActiveCardDamageAggregation", service)
         self.assertRegex(service, r"CompleteCardDamageAggregation[\s\S]*?MaxHitDamage")
+
+
+    def test_run_end_resets_meter_and_persisted_state(self):
+        mod_entry = self.read_text("src/ModEntry.cs")
+        service = self.read_text("src/RunDPSMeterService.cs")
+
+        self.assertIn("typeof(RunManager)", mod_entry)
+        self.assertIn("nameof(RunManager.OnEnded)", mod_entry)
+        self.assertIn("RunEndedPostfix", mod_entry)
+        self.assertIn("RunDPSMeterService.EndRun", mod_entry)
+        self.assertIn("public static void EndRun", service)
+        self.assertRegex(service, r"EndRun[\s\S]*?Totals\.Clear\(\)")
+        self.assertRegex(service, r"EndRun[\s\S]*?_currentRunToken\s*=\s*null")
+        self.assertRegex(service, r"EndRun[\s\S]*?_stableRunId\s*=\s*null")
+        self.assertRegex(service, r"EndRun[\s\S]*?DeletePersistedState")
+        self.assertRegex(service, r"DeletePersistedState[\s\S]*?File\.Delete")
 
     def test_source_comments_are_english_only(self):
         for relative_path in ["src/ModEntry.cs", "src/ReflectionHelpers.cs", "src/RunDPSMeterService.cs", "src/DPSMeterOverlay.cs"]:
